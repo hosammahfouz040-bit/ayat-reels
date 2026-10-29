@@ -1,75 +1,65 @@
 
-name: Ayat - Inspect Source Project
+name: Build Ayat APK
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "Ayat-source.zip"
-      - ".github/workflows/build-apk.yml"
 
 permissions:
   contents: read
 
 jobs:
-  inspect:
-    name: Inspect Ayat Source ZIP
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
-      - name: Download repository files
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Verify source archive
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Extract source
+        run: |
+          unzip -q Ayat-source.zip -d source
+          test -f source/ayat-reels/frontend/package.json
+          test -f source/ayat-reels/frontend/android/gradlew
+
+      - name: Install and build frontend
+        working-directory: source/ayat-reels/frontend
         shell: bash
         run: |
-          set -euo pipefail
-          test -f Ayat-source.zip
-          unzip -t Ayat-source.zip
+          set -e
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+          npm run build
 
-      - name: Inspect project structure
-        shell: bash
+      - name: Sync Android project
+        working-directory: source/ayat-reels/frontend
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: source/ayat-reels/frontend/android
         run: |
-          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-          mkdir -p inspection
-          unzip -Z1 Ayat-source.zip \
-            > inspection/archive-files.txt
-
-          unzip -q Ayat-source.zip -d inspection/source
-
-          find inspection/source -type f \
-            \( -name "pubspec.yaml" \
-            -o -name "package.json" \
-            -o -name "capacitor.config.ts" \
-            -o -name "capacitor.config.json" \
-            -o -name "capacitor.config.js" \
-            -o -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-            -o -name "build.gradle" \
-            -o -name "build.gradle.kts" \
-            -o -name "gradlew" \
-            -o -name "AndroidManifest.xml" \) \
-            | sort > inspection/project-files.txt
-
-          echo "=== PROJECT FILES ==="
-          cat inspection/project-files.txt
-
-          echo "=== ROOT CONTENTS ==="
-          find inspection/source -maxdepth 2 -type f \
-            | sort | head -n 200
-
-          echo "=== SOURCE ZIP SIZE ==="
-          du -h Ayat-source.zip
-
-      - name: Upload inspection report
+      - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Ayat-Source-Inspection
-          path: |
-            inspection/archive-files.txt
-            inspection/project-files.txt
+          name: Ayat-APK
+          path: source/ayat-reels/frontend/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 7
