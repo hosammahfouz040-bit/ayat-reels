@@ -1,0 +1,75 @@
+
+name: Ayat - Inspect Source Project
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Ayat-source.zip"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Inspect Ayat Source ZIP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Download repository files
+        uses: actions/checkout@v4
+
+      - name: Verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f Ayat-source.zip
+          unzip -t Ayat-source.zip
+
+      - name: Inspect project structure
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p inspection
+          unzip -Z1 Ayat-source.zip \
+            > inspection/archive-files.txt
+
+          unzip -q Ayat-source.zip -d inspection/source
+
+          find inspection/source -type f \
+            \( -name "pubspec.yaml" \
+            -o -name "package.json" \
+            -o -name "capacitor.config.ts" \
+            -o -name "capacitor.config.json" \
+            -o -name "capacitor.config.js" \
+            -o -name "settings.gradle" \
+            -o -name "settings.gradle.kts" \
+            -o -name "build.gradle" \
+            -o -name "build.gradle.kts" \
+            -o -name "gradlew" \
+            -o -name "AndroidManifest.xml" \) \
+            | sort > inspection/project-files.txt
+
+          echo "=== PROJECT FILES ==="
+          cat inspection/project-files.txt
+
+          echo "=== ROOT CONTENTS ==="
+          find inspection/source -maxdepth 2 -type f \
+            | sort | head -n 200
+
+          echo "=== SOURCE ZIP SIZE ==="
+          du -h Ayat-source.zip
+
+      - name: Upload inspection report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ayat-Source-Inspection
+          path: |
+            inspection/archive-files.txt
+            inspection/project-files.txt
+          if-no-files-found: warn
+          retention-days: 7
